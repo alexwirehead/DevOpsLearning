@@ -1,0 +1,187 @@
+apiVersion: v1 
+kind: PersistentVolume 
+metadata:
+  name: drupal-mysql-pv
+  labels:
+    type: local
+spec:
+  claimRef:
+    name: drupal-mysql-pvc
+  storageClassName: standard       
+  capacity:
+    storage: 5Gi
+  accessModes:
+    - ReadWriteOnce 
+  hostPath:                       
+    path: "/drupal-mysql-data"
+  persistentVolumeReclaimPolicy: Retain
+---    
+apiVersion: v1 
+kind: PersistentVolumeClaim       
+metadata:                          
+  name: drupal-mysql-pvc
+  labels:
+    app: mysql-app 
+spec:                              
+  storageClassName: standard       
+  accessModes: 
+    - ReadWriteOnce             
+  resources:
+    requests:
+      storage: 3Gi
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: mysql-root-pass
+data:
+  password: WVVJaWRoYjY2Nw==
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: mysql-user-pass
+data:
+  username: a29kZWtsb3VkX3RvcA==
+  password: QnJ1Q1N0bk1UNQ==
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: mysql-db-url
+data:
+  database: a29kZWtsb3VkX2RiMg==
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: drupal-mysql
+  labels:
+    app: drupal
+    tier: db
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: drupal
+      tier: db
+  template:
+    metadata:
+     labels:
+        app: drupal
+        tier: db
+    spec:
+      volumes:                        
+        - name: mysql-persistent-storage
+          persistentVolumeClaim: 
+            claimName: drupal-mysql-pvc
+      containers:
+        - name: mysql-container
+          image: mysql:5.7
+          env:              
+          - name: MYSQL_ROOT_PASSWORD 
+            valueFrom:     
+              secretKeyRef:
+                name: mysql-root-pass 
+                key: password
+          - name: MYSQL_DATABASE
+            valueFrom:
+              secretKeyRef:
+                name: mysql-db-url 
+                key: database
+          - name: MYSQL_USER
+            valueFrom:
+              secretKeyRef:
+                name: mysql-user-pass 
+                key: username
+          - name: MYSQL_PASSWORD
+            valueFrom:
+              secretKeyRef:
+                name: mysql-user-pass 
+                key: password
+          ports:
+            - containerPort: 3306
+          volumeMounts:
+            - mountPath: /var/lib/mysql
+              name: mysql-persistent-storage
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: drupal
+  labels:
+    app: drupal
+    tier: drupal-app
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: drupal
+      tier: drupal-app
+  template:
+    metadata:
+     labels:
+        app: drupal
+        tier: drupal-app
+    spec:
+      containers:
+        - name: drupal-container
+          image: drupal:8.6
+          env:              
+          - name: MYSQL_ROOT_PASSWORD 
+            valueFrom:     
+              secretKeyRef:
+                name: mysql-root-pass 
+                key: password
+          - name: MYSQL_DATABASE
+            valueFrom:
+              secretKeyRef:
+                name: mysql-db-url 
+                key: database
+          - name: MYSQL_USER
+            valueFrom:
+              secretKeyRef:
+                name: mysql-user-pass 
+                key: username
+          - name: MYSQL_PASSWORD
+            valueFrom:
+              secretKeyRef:
+                name: mysql-user-pass 
+                key: password
+          ports:
+            - containerPort: 80
+---
+apiVersion: v1                    
+kind: Service                      
+metadata:
+  name: drupal-service         
+  labels:             
+    app: drupal
+    tier: drupal-app
+spec:
+  type: NodePort
+  ports:
+    - targetPort: 80
+      port: 80
+      nodePort: 30095
+  selector:                       
+    app: drupal
+    tier: drupal-app
+---
+apiVersion: v1                    
+kind: Service                      
+metadata:
+  name: drupal-mysql-service      
+  labels:             
+    app: drupal
+    tier: db
+spec:
+  type: NodePort
+  ports:
+    - targetPort: 80
+      port: 80
+      nodePort: 30008
+      protocol: TCP
+  selector:                       
+    app: drupal
+    tier: db
